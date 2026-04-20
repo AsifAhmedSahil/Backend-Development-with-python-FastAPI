@@ -1,11 +1,12 @@
 from src.user.dtos import UserSchema,LoginSchema
 from sqlalchemy.orm import Session
 from src.user.models import UserModel
-from fastapi import HTTPException,status
+from fastapi import HTTPException,status,Request
 from pwdlib import PasswordHash
 from datetime import datetime,timedelta
 import jwt
 from src.utils.settings import settings
+from jwt.exceptions import InvalidTokenError
 
 password_hash = PasswordHash.recommended()
 
@@ -53,9 +54,37 @@ def login_user(body:LoginSchema,db:Session):
     if not verify_password(body.password,user.hash_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="You entered wrong password..!")
     
-    exp_time  =datetime.now() + timedelta(minutes=settings.EXPIRY_TIME)
+    exp_time  =datetime.now() + timedelta(seconds=40)
     
-    token = jwt.encode({"_id":user.id,"username":user.username,"exp":exp_time},settings.SECRET_KEY,settings.ALGORITHM)
+    token = jwt.encode({"_id":user.id,"username":user.username,"exp":exp_time.timestamp()},settings.SECRET_KEY,settings.ALGORITHM)
     
 
     return {"token":token}
+
+# token send
+
+def is_authenticated(request:Request,db:Session):
+    try:
+      
+        token = request.headers.get("authorization")
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="You are unauthorized")
+        token = token.split(" ")[-1]
+
+        data = jwt.decode(token,settings.SECRET_KEY,settings.ALGORITHM)
+        user_id  = data.get("_id")
+        
+
+      
+        
+        user = db.query(UserModel).filter(UserModel.id == user_id).first()
+
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="You are unauthorized")
+        
+
+
+        return user 
+    except InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="You are unauthorized")
+
