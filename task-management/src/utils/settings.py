@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DB_CONNECTION:str
     SECRET_KEY:str
     ALGORITHM:str
+    EXPIRY_TIME:int
 
 
 settings = Settings()

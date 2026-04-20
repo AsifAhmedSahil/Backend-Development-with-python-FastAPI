@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from src.user.models import UserModel
 from fastapi import HTTPException,status
 from pwdlib import PasswordHash
+from datetime import datetime,timedelta
 import jwt
 from src.utils.settings import settings
 
@@ -42,6 +43,7 @@ def register(body:UserSchema,db:Session):
 
 
 def login_user(body:LoginSchema,db:Session):
+    print(body)
 
     user = db.query(UserModel).filter(UserModel.username == body.username).first()
 
@@ -51,7 +53,9 @@ def login_user(body:LoginSchema,db:Session):
     if not verify_password(body.password,user.hash_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="You entered wrong password..!")
     
-    token = jwt.encode({"_id":user.id,"username":user.username},settings:SECRET_KEY,settings:ALGORITHM)
+    exp_time  =datetime.now() + timedelta(minutes=settings.EXPIRY_TIME)
+    
+    token = jwt.encode({"_id":user.id,"username":user.username,"exp":exp_time},settings.SECRET_KEY,settings.ALGORITHM)
     
 
-    return "Login"
+    return {"token":token}
