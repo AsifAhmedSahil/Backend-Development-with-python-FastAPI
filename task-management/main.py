@@ -10,3 +10,6 @@ app = FastAPI(title="This is my task management app.")
 app.include_router(task_routes)
 app.include_router(user_routes)
 
+# alembic command, add any field in table and push to the db then 
+# 1st -  alembic revision --autogenerate -m "add user_id to tasks"
+# 2nd - alembic upgrade head
