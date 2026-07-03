@@ -81,6 +81,53 @@ def get_customers(city: str, risk: str):
 
 ---
 
+## 🔍 Pydantic Validation — How It Works in This Code
+
+### Definition (in `dtos.py` & `loan.py`)
+
+```python
+# dtos.py (root level)
+class productDTO(BaseModel):
+    id: int
+    title: str
+    count: int = 0
+    price: int = 0
+
+# loan.py (fastapi-project)
+class LoanApplication(BaseModel):
+    age: int
+    income: float
+    loan_amount: float        # typo in field name! ("load" in original)
+    employment_years: int
+```
+
+### How It Works (step by step)
+
+1. Client sends `POST /predict` with JSON body:
+   ```json
+   {"age": 30, "income": 60000, "loan_amount": 500000, "employment_years": 5}
+   ```
+2. FastAPI reads the request body and passes it to Pydantic's `LoanApplication` model.
+3. Pydantic **automatically**:
+   - Validates types (`age` must be `int`, `income` must be `float`, etc.)
+   - Provides default values (e.g. `count: int = 0` — uses 0 if not sent)
+   - Raises `ValidationError` with a clear message if types are wrong
+4. If validation passes, the function receives a fully-typed Python object.
+5. If validation fails → FastAPI returns **422 Unprocessable Entity** with details.
+
+### Why Pydantic Is Needed
+
+| Benefit | In this code |
+|---------|-------------|
+| **Type safety** | Ensures `income` is a number, not a string like `"fifty thousand"` |
+| **Automatic error messages** | No manual `if not isinstance(...)` checks |
+| **IDE autocomplete** | `application.income` gets intellisense in editors |
+| **Default values** | `count: int = 0` — field is optional, defaults to 0 |
+| **JSON Schema generation** | Powers the `/docs` Swagger UI auto-form |
+| **Serialization** | `.model_dump()` converts back to dict for storage/response |
+
+---
+
 ## 🧪 Small Interview Questions (based on this code)
 
 | # | Question | Answer |
@@ -88,8 +135,11 @@ def get_customers(city: str, risk: str):
 | 1 | What's the difference between **path parameter** and **query parameter**? | Path: `/customer/101` — part of URL route. Query: `/customers?city=ctg` — key-value after `?`. Path for identity, query for filtering. |
 | 2 | Why does `predict_loan` return only `age` and `decision`, not all fields? | The response dict explicitly picks fields — you control what the API returns, not required to send everything. |
 | 3 | What happens if I send `POST /predict` with `income: "fifty thousand"` (string)? | Pydantic's `BaseModel` validates types → FastAPI returns **422 Validation Error** before reaching the function. |
-| 4 | How would you make `city` parameter optional in `/customers`? | Use `Optional[str] = None` from `typing` and handle the `None` case in filter logic. |
-| 5 | What's the issue with having **multiple FastAPI apps** (one per file)? | Each file creates its own `app = FastAPI()` — they can't run together. Better to use `APIRouter` or a single app with imports. |
+| 4 | What is Pydantic and why is it used with FastAPI? | Pydantic is a data validation library using Python type hints. It ensures request data has correct types, provides clear error messages, generates OpenAPI schema for Swagger docs, and gives IDE autocomplete — all with zero manual validation code. |
+| 5 | In `loan.py`, what would happen if `age` is sent as a string `"30"`? | Pydantic tries **type coercion** — `"30"` (str) can be converted to `30` (int), so it would pass. But `"thirty"` cannot, so it returns **422**. |
+| 6 | How does `.model_dump()` work in the create-product endpoint? | It converts the Pydantic model instance back to a plain dict so it can be appended to the `products` list and stored/serialized as JSON. |
+| 7 | How would you make `city` parameter optional in `/customers`? | Use `Optional[str] = None` from `typing` and handle the `None` case in filter logic. |
+| 8 | What's the issue with having **multiple FastAPI apps** (one per file)? | Each file creates its own `app = FastAPI()` — they can't run together. Better to use `APIRouter` or a single app with imports. |
 
 ---
 
