@@ -11,8 +11,9 @@ Backend-Development-with-python-FastAPI/
 ├── main.py                        # Product CRUD API (root level)
 ├── dtos.py                        # Pydantic DTO for product validation
 ├── mockData.py                    # Mock product database
-├── fastapi-project/               # Loan & Customer Risk API
+├── fastapi-project/               # Loan, Student & Customer Risk APIs
 │   ├── main.py                    # Basic routes (/, /about)
+│   ├── main_s.py                  # Student marks API with HTTPException
 │   ├── loan.py                    # Loan approval prediction
 │   ├── path_parameter.py          # Path & query params demo
 │   └── query_parameter.py         # Filtered customer lookup
@@ -81,6 +82,35 @@ def get_customers(city: str, risk: str):
 
 ---
 
+### 5. Student Marks API with Error Handling (`main_s.py`)
+
+**Intuition:** Shows **real-world input validation + HTTPException** — 3 different checks before updating data.
+
+```python
+@app.get("/student/{student_id}")
+def get_student(student_id: str):
+    if student_id not in students:
+        raise HTTPException(404, detail=f"student {student_id} does not exist")
+    return students[student_id]
+
+@app.post("/student-info")
+def add_student(submission: MarksSubmission):
+    # Guard 1: Student doesn't exist → 404
+    # Guard 2: Marks out of 0-100 range → 400
+    # Guard 3: Subject name is empty → 400
+    # On success: update marks, return confirmation
+```
+
+**Flow:** `POST /student-info` with JSON `{student_id, marks, subject}` → Pydantic validates types → 3 **manual business-rule guards** (`HTTPException`) → update student record → return success.
+
+**Key patterns to remember:**
+- `HTTPException(status_code, detail)` — FastAPI's standard error response
+- **400** = client sent bad data, **404** = resource not found, **500** = server error
+- Business validation (marks 0–100, non-empty subject) happens **after** Pydantic type validation
+- Error `detail` can be a **string** or a **dict** with structured info
+
+---
+
 ## 🔍 Pydantic Validation — How It Works in This Code
 
 ### Definition (in `dtos.py` & `loan.py`)
@@ -99,6 +129,12 @@ class LoanApplication(BaseModel):
     income: float
     loan_amount: float        # typo in field name! ("load" in original)
     employment_years: int
+
+# main_s.py (fastapi-project)
+class MarksSubmission(BaseModel):
+    student_id: str
+    marks: int
+    subject: str
 ```
 
 ### How It Works (step by step)
@@ -140,6 +176,10 @@ class LoanApplication(BaseModel):
 | 6 | How does `.model_dump()` work in the create-product endpoint? | It converts the Pydantic model instance back to a plain dict so it can be appended to the `products` list and stored/serialized as JSON. |
 | 7 | How would you make `city` parameter optional in `/customers`? | Use `Optional[str] = None` from `typing` and handle the `None` case in filter logic. |
 | 8 | What's the issue with having **multiple FastAPI apps** (one per file)? | Each file creates its own `app = FastAPI()` — they can't run together. Better to use `APIRouter` or a single app with imports. |
+| 9 | What is `HTTPException` and when to use it? | FastAPI's built-in way to return error responses with proper status codes. Use it for any error the client should know about — invalid input (400), missing resource (404), unauthorized (401), etc. |
+| 10 | Why does `main_s.py` use 3 separate `if` checks instead of 1? | **Separation of concerns** — each check returns a different status code (400 vs 404) and specific error message. Mixing them would lose clarity. |
+| 11 | What's the difference between Pydantic validation and manual `if` checks in `main_s.py`? | Pydantic catches **type errors** (e.g. marks="abc") automatically with 422. Manual checks handle **business rules** (e.g. marks must be 0–100) — Pydantic can't know your domain logic. |
+| 12 | In `main_s.py`, why is `marks` validated as 0–100 manually instead of using Pydantic? | Pydantic's `Field(ge=0, le=100)` could do this, but manual `if` checks allow custom error message **with the received value** (`marks_received`) and a **fix hint** — better UX. |
 
 ---
 
