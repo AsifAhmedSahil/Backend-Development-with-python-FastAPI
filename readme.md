@@ -208,6 +208,7 @@ class HouseFeatures(BaseModel):
 | `/` | GET | Home — API status info |
 | `/health` | GET | Health check — shows model name, features, avg error |
 | `/predict` | POST | Send 8 house features → get predicted price |
+| `/predict-file` | POST | Upload CSV with many houses → download CSV with predictions |
 
 ### Prediction Flow (`POST /predict`)
 ```
@@ -240,7 +241,45 @@ predicted = model.predict(input_data)[0]   # e.g. 2.15 (=$215K)
 # "confidence_range": "$176,000 to $254,000"
 ```
 
-### Key Patterns
+---
+
+### 2. Bulk Predict from CSV (`POST /predict-file`)
+
+**Intuition:** Upload a `.csv` file with many houses → get back a `.csv` file with prices added — batch prediction instead of one-by-one.
+
+```python
+@app.post("/predict-file")
+async def predict_file(file: UploadFile = File(...)):
+```
+
+**Flow:**
+```
+User uploads CSV file
+       ↓
+Check: file extension must be .csv → else 400
+       ↓
+Read file content → pd.read_csv() into DataFrame
+       ↓
+Check: all 8 required columns present? → else 400 with list of missing
+       ↓
+Check: file has at least 1 data row? → else 400
+       ↓
+model.predict(df) → predictions for ALL rows at once
+       ↓
+Add predicted_price_usd column ($X,XXX format)
+       ↓
+Return CSV as downloadable file (StreamingResponse)
+```
+
+**Key Concepts New Here:**
+- **`UploadFile`** — FastAPI's file upload handler; use `await file.read()` to get bytes
+- **`File(...)`** — marks the parameter as a required file upload in Swagger UI
+- **`io.BytesIO`** — wraps raw bytes so pandas can read them as a file stream
+- **`StreamingResponse`** — returns a downloadable file instead of JSON; set `media_type` + `Content-Disposition` header for filename
+- **Bulk prediction** — `model.predict(df)` handles multiple rows in one call (vectorized)
+- **Column validation** — checks required columns exist before predicting (catches typos in CSV header)
+
+### Key Patterns (all endpoints)
 - **Model loaded once at module level** — not inside the function (avoids reloading on every request)
 - **`Field(gt=, ge=, le=)`** — zero-code range validation, auto-generated in Swagger UI
 - **`HTTPException(500)`** — catches prediction errors gracefully
@@ -341,6 +380,11 @@ class HouseFeatures(BaseModel):
 | 21 | Why is the predicted price multiplied by 100,000? | The California Housing dataset stores prices in **$100K units** (e.g. 2.15 = $215,000). Multiply by 100,000 to get actual USD for readability. |
 | 22 | What's the purpose of the `/health` endpoint? | A **readiness probe** — tells clients/monitoring that the API is up, which model is loaded, and what features it expects. Useful for container orchestration (Kubernetes). |
 | 23 | Why convert Pydantic model to DataFrame before `model.predict()`? | sklearn models expect **2D array-like input** (rows × columns). A DataFrame preserves column names and order matching the training data — raw dict would fail. |
+| 24 | What is `UploadFile` and how is it different from JSON body? | `UploadFile` handles **file uploads** (CSV, images, etc.). Unlike JSON (parsed by Pydantic), files are read as raw bytes via `await file.read()`. |
+| 25 | Why check if the file ends with `.csv` before processing? | **Defense in depth** — Pydantic can't validate file extensions. Manual check prevents garbage input from reaching the model and gives a clear error message. |
+| 26 | What does `StreamingResponse` do? | Returns a **downloadable file** instead of JSON. Sets `media_type` (e.g. `text/csv`) and `Content-Disposition` header to tell the browser to download as `predictions.csv`. |
+| 27 | How does `model.predict(df)` handle multiple rows? | sklearn models are **vectorized** — passing a 100-row DataFrame returns 100 predictions in one call, much faster than looping one-by-one. |
+| 28 | Why validate required columns even though the user uploaded CSV? | Users may have **typos or missing columns** in their CSV header. Validating early prevents cryptic sklearn errors and returns a helpful message listing which columns are missing. |
 
 ---
 
