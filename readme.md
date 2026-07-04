@@ -1,6 +1,6 @@
 # 🚀 FastAPI Backend Development — Learning Journey
 
-A hands-on collection of **FastAPI** projects demonstrating core backend concepts: CRUD operations, path & query parameters, request validation with Pydantic, and a loan risk prediction API.
+A hands-on collection of **FastAPI** projects demonstrating core backend concepts: CRUD operations, path & query parameters, request validation with Pydantic, loan risk prediction, and a California housing price ML model.
 
 ---
 
@@ -17,6 +17,11 @@ Backend-Development-with-python-FastAPI/
 │   ├── loan.py                    # Loan approval prediction
 │   ├── path_parameter.py          # Path & query params demo
 │   └── query_parameter.py         # Filtered customer lookup
+├── house-prediction-api/          # ML: California housing price prediction
+│   ├── train.py                   # Train RandomForest model
+│   ├── explore.py                 # Explore dataset
+│   ├── house_model.joblib         # Trained model file
+│   └── house_features.joblib      # Feature column names
 ├── task-management/               # Task management with DB migrations
 └── README.md
 ```
@@ -111,7 +116,65 @@ def add_student(submission: MarksSubmission):
 
 ---
 
-## 🔍 Pydantic Validation — How It Works in This Code
+## 🤖 house-prediction-api — ML Model Training
+
+### Dataset: California Housing
+Built-in sklearn dataset with ~20K records and 8 features (`MedInc`, `HouseAge`, `AveRooms`, `AveBedrms`, `Population`, `AveOccup`, `Latitude`, `Longitude`).
+
+### Code Flow (`train.py`)
+
+```
+Load California Housing dataset
+        ↓
+Convert to DataFrame (X = features, y = target price)
+        ↓
+train_test_split(80% train, 20% test, random_state=42)
+        ↓
+Train RandomForestRegressor(n_estimators=100)
+        ↓
+Predict on test set → Evaluate (MAE, R²)
+        ↓
+Save model + feature names with joblib
+```
+
+### Intuition
+
+```python
+# X = input features (e.g. income, house age, rooms)
+X = pd.DataFrame(data.data, columns=data.feature_names)
+
+# y = what we want to predict (house price in $100K units)
+y = data.target
+
+# 80% data trains the model, 20% tests accuracy
+X_train, X_test, Y_train, Y_test = train_test_split(
+    x, y, test_size=0.2, random_state=42
+)
+
+# RandomForest = many decision trees voting together
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, Y_train)      # learns patterns from training data
+
+y_pred = model.predict(X_test)   # predict on unseen data
+mae = mean_absolute_error(Y_test, y_pred)   # avg error ≈ $45K–55K
+r2 = r2_score(Y_test, y_pred)               # ~0.80 = good fit
+
+joblib.dump(model, "house_model.joblib")        # save for later use
+joblib.dump(list(x.columns), "house_features.joblib")  # save column order
+```
+
+### Why This Matters for an API
+The saved `.joblib` files are meant to be loaded in a FastAPI endpoint — send house features as JSON → model predicts price → return as API response.
+
+### Key Concepts
+- **`train_test_split`** — prevents data leakage; model never sees test data during training
+- **`random_state=42`** — ensures reproducible results every run
+- **`n_estimators=100`** — more trees = better accuracy, but slower training
+- **`MAE`** — average dollar error (easier to explain to business)
+- **`R²`** — how much variance the model explains (0.80 = 80%)
+- **`joblib.dump`** — serializes trained model to disk for inference API
+
+---
 
 ### Definition (in `dtos.py` & `loan.py`)
 
@@ -180,6 +243,12 @@ class MarksSubmission(BaseModel):
 | 10 | Why does `main_s.py` use 3 separate `if` checks instead of 1? | **Separation of concerns** — each check returns a different status code (400 vs 404) and specific error message. Mixing them would lose clarity. |
 | 11 | What's the difference between Pydantic validation and manual `if` checks in `main_s.py`? | Pydantic catches **type errors** (e.g. marks="abc") automatically with 422. Manual checks handle **business rules** (e.g. marks must be 0–100) — Pydantic can't know your domain logic. |
 | 12 | In `main_s.py`, why is `marks` validated as 0–100 manually instead of using Pydantic? | Pydantic's `Field(ge=0, le=100)` could do this, but manual `if` checks allow custom error message **with the received value** (`marks_received`) and a **fix hint** — better UX. |
+| 13 | What does `train_test_split(X, y, test_size=0.2)` do? | Shuffles the data and splits it: 80% for training (`X_train`, `Y_train`), 20% for testing (`X_test`, `Y_test`). The model never sees test data during training, giving an honest accuracy score. |
+| 14 | Why use `random_state=42` in ML? | Makes the random shuffle **deterministic** — every run produces the same split. Without it, you'd get different results each time, making debugging impossible. |
+| 15 | What is `RandomForestRegressor` in simple terms? | It creates **100+ decision trees**, each trained on a random subset of data. The final prediction is the **average of all trees** — like asking 100 experts and taking the average. |
+| 16 | What's the difference between MAE and R² score? | **MAE** = average dollar error (e.g. "our predictions are off by ~$50K"). **R²** = how well the model explains variance (0.80 = 80% of price changes are explained by the features). |
+| 17 | Why save model with `joblib` instead of `pickle`? | `joblib` is more **efficient for large numpy arrays** (common in sklearn models). It compresses better and is faster for scikit-learn objects. |
+| 18 | How would you serve this model via FastAPI? | Load `house_model.joblib` + `house_features.joblib` at startup. Create a Pydantic schema for the 8 input features. `POST /predict` → validate → convert to DataFrame → `model.predict()` → return price. |
 
 ---
 
