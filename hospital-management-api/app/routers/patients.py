@@ -1,0 +1,62 @@
+from fastapi import APIRouter,Depends,HTTPException
+from app.models import Patient,Stuff
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.schemas import PatientCreate,PatientOut
+from app.auth import get_current_stuff
+from app.database import get_db
+from sqlalchemy import select
+
+
+router = APIRouter(prefix="/patients",tags=["Patients"])
+
+@router.post("/",response_model=PatientOut,status_code=201)
+async def create_patient(patient:PatientCreate,
+                         db: AsyncSession = Depends(get_db),
+                         current_staff: Stuff = Depends(get_current_stuff)
+                         ):
+    new_patient = Patient(**patient.model_dump(),registered_by_id = current_staff.id)
+    db.add(new_patient)
+    await db.commit()
+    await db.refresh(new_patient)
+    return new_patient
+
+@router.get("/",response_model=list[PatientOut])
+async def list_patients(db:AsyncSession = Depends(get_db),
+            current_staff: Stuff = Depends(get_current_stuff),
+            ):
+    result = await db.execute(select(Patient))
+    return result.scalars().all()
+
+@router.get("/{patient_id}",response_model=PatientOut)
+async def get_patient(patient_id:int,db:AsyncSession = Depends(get_db),
+        current_staff:Stuff = Depends(get_current_stuff)
+                      ):
+    result = await db.execute(select(Patient).where(Patient.id == patient_id))
+    patient = result.scalar_one_or_none()
+    if patient is None:
+        raise HTTPException(status_code=404,detail="Patient not found")
+    return patient
+
+@router.put("/{patient_id}",response_model=PatientOut)
+async def update_patient(patient_id:int,updated: PatientCreate,db:AsyncSession = Depends(get_db),current_staff:Stuff = Depends(get_current_stuff)):
+    result = await db.execute(select(Patient).where(Patient.id == patient_id))
+    patient = result.scalar_one_or_none()
+    if patient is None:
+        raise HTTPException(status_code=404,detail="Patient not found")
+    for field,value in updated.model_dump().items():
+        setattr(patient,field,value)
+    await db.commit()
+    await db.refresh(patient)
+    return patient
+
+@router.delete("/{patient_id}",status_code=204)
+async def delete_patient(patient_id:int,db:AsyncSession = Depends(get_db),
+                         current_staff:Stuff = Depends(get_current_stuff)):
+    result = await db.execute(select(Patient).where(Patient.id == patient_id))
+    patient = result.scalar_one_or_none()
+    if patient is None:
+        raise HTTPException(status_code=404,detail="Patient not found")
+    await db.delete(patient)
+    await db.commit()
+
+    
