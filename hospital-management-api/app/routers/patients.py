@@ -6,7 +6,7 @@ from app.auth import get_current_staff
 from app.database import get_db
 from sqlalchemy import select
 
-
+# update
 router = APIRouter(prefix="/patients",tags=["Patients"])
 
 @router.post("/",response_model=PatientOut,status_code=201)
